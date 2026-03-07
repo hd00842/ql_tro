@@ -1,11 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
+import { writeFile, mkdir } from 'fs/promises';
+import { join, extname } from 'path';
+import { randomBytes } from 'crypto';
+
+const UPLOAD_DIR = join(process.cwd(), 'public', 'uploads');
 
 export async function POST(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
-    
+
     if (!session) {
       return NextResponse.json(
         { message: 'Unauthorized' },
@@ -15,7 +20,7 @@ export async function POST(request: NextRequest) {
 
     const formData = await request.formData();
     const file = formData.get('file') as File;
-    
+
     if (!file) {
       return NextResponse.json(
         { message: 'Không có file được chọn' },
@@ -39,32 +44,28 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Upload lên Cloudinary
-    const cloudinaryFormData = new FormData();
-    cloudinaryFormData.append('file', file);
-    cloudinaryFormData.append('upload_preset', process.env.NEXT_PUBLIC_UPLOAD_PRESET || 'poalupload');
+    // Tạo thư mục uploads nếu chưa có
+    await mkdir(UPLOAD_DIR, { recursive: true });
 
-    const cloudinaryResponse = await fetch(
-      `https://api.cloudinary.com/v1_1/${process.env.NEXT_PUBLIC_CLOUD_NAME || 'duv9pccwi'}/image/upload`,
-      {
-        method: 'POST',
-        body: cloudinaryFormData,
-      }
-    );
+    // Tạo tên file duy nhất
+    const ext = extname(file.name) || '.jpg';
+    const uniqueName = `${Date.now()}-${randomBytes(8).toString('hex')}${ext}`;
+    const filePath = join(UPLOAD_DIR, uniqueName);
 
-    if (!cloudinaryResponse.ok) {
-      throw new Error('Lỗi khi upload lên Cloudinary');
-    }
+    // Lưu file vào local
+    const buffer = Buffer.from(await file.arrayBuffer());
+    await writeFile(filePath, buffer);
 
-    const cloudinaryResult = await cloudinaryResponse.json();
+    const publicId = `uploads/${uniqueName}`;
+    const secureUrl = `/uploads/${uniqueName}`;
 
     return NextResponse.json({
       success: true,
       data: {
-        public_id: cloudinaryResult.public_id,
-        secure_url: cloudinaryResult.secure_url,
-        width: cloudinaryResult.width,
-        height: cloudinaryResult.height,
+        public_id: publicId,
+        secure_url: secureUrl,
+        width: 0,
+        height: 0,
       },
       message: 'Upload ảnh thành công',
     });
