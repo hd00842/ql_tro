@@ -1,11 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { writeFile, mkdir } from 'fs/promises';
-import { join, extname } from 'path';
-import { randomBytes } from 'crypto';
-
-const UPLOAD_DIR = join(process.cwd(), 'public', 'uploads');
+import { uploadFile } from '@/lib/storage';
 
 export async function POST(request: NextRequest) {
   try {
@@ -28,7 +24,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Kiểm tra loại file
     if (!file.type.startsWith('image/')) {
       return NextResponse.json(
         { message: 'Chỉ được upload file ảnh' },
@@ -36,7 +31,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Kiểm tra kích thước file (tối đa 10MB)
     if (file.size > 10 * 1024 * 1024) {
       return NextResponse.json(
         { message: 'Kích thước file không được vượt quá 10MB' },
@@ -44,26 +38,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Tạo thư mục uploads nếu chưa có
-    await mkdir(UPLOAD_DIR, { recursive: true });
-
-    // Tạo tên file duy nhất
-    const ext = extname(file.name) || '.jpg';
-    const uniqueName = `${Date.now()}-${randomBytes(8).toString('hex')}${ext}`;
-    const filePath = join(UPLOAD_DIR, uniqueName);
-
-    // Lưu file vào local
-    const buffer = Buffer.from(await file.arrayBuffer());
-    await writeFile(filePath, buffer);
-
-    const publicId = `uploads/${uniqueName}`;
-    const secureUrl = `/uploads/${uniqueName}`;
+    // Tự động chọn provider: cloudinary | minio | local (theo STORAGE_PROVIDER)
+    const result = await uploadFile(file);
 
     return NextResponse.json({
       success: true,
       data: {
-        public_id: publicId,
-        secure_url: secureUrl,
+        public_id: result.public_id,
+        secure_url: result.secure_url,
         width: 0,
         height: 0,
       },
